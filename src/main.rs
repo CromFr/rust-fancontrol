@@ -4,7 +4,7 @@ use std::ffi::CString;
 
 extern crate gtk;
 use gtk::prelude::*;
-use gtk::{Button, Window, WindowType, Box, Orientation, ListBox, Label};
+use gtk::{Window, WindowType, Box, Orientation, ListBox, Label};
 
 extern crate libc;
 
@@ -51,17 +51,36 @@ fn main() {
 
         while chip_ptr != ptr::null() {
             let chip = *chip_ptr;
-            println!("Chip found: {:?}", &chip);
-
 
             let path = CString::from_raw((&chip).path).into_string().unwrap();
             let prefix = CString::from_raw((&chip).prefix).into_string().unwrap();
 
+            println!("Chip found: path:{} prefix:{} -- {:?}", path, prefix, &chip);
+
+
+            let mut j = 0;
+            let mut feat_ptr = sensors_get_features(chip_ptr, &mut j);
+            while feat_ptr != ptr::null() {
+
+                println!("    feature: {:?} {:?}",
+                         CString::from_raw(sensors_get_label(chip_ptr, feat_ptr)),
+                         *feat_ptr);
+
+                let mut k = 0;
+                let mut subfeat_ptr = sensors_get_all_subfeatures(chip_ptr, feat_ptr, &mut k);
+                while subfeat_ptr != ptr::null() {
+
+                    println!("        subfeat: {:?}", *subfeat_ptr);
+
+                    subfeat_ptr = sensors_get_all_subfeatures(chip_ptr, feat_ptr, &mut k);
+                }
+
+                feat_ptr = sensors_get_features(chip_ptr, &mut j);
+            }
 
 
             fan_list.insert(&Label::new(Some(&path)), -1);
 
-            i = i + 1;
             chip_ptr = sensors_get_detected_chips(ptr::null(), &mut i);
         }
     }
