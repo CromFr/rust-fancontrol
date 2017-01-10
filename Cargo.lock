@@ -2,6 +2,7 @@
 name = "fancontrol-gui"
 version = "0.1.0"
 dependencies = [
+ "glib 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gtk 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

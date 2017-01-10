@@ -1,96 +1,127 @@
 
-use std::ptr;
-use std::ffi::CString;
+mod sensorsc;
+mod sensors;
 
 extern crate gtk;
 use gtk::prelude::*;
-use gtk::{Window, WindowType, Box, Orientation, ListBox, Label};
+#[allow(unused_imports)]
+use gtk::{Window, WindowType, Box, Orientation, ListBox, Label, Stack, ListBoxRow, StackSidebar,
+          Separator, ScrolledWindow, Adjustment};
+extern crate glib;
 
-extern crate libc;
 
-mod sensors;
 use sensors::*;
+
+
+fn remove_nul(s: &str) -> String {
+    // println!("##########> {:?} -> {:?}", s.as_bytes(), s.replace("\0", "").as_bytes());
+
+    // s.replace("\0", "")
+    s.to_string()
+}
 
 fn main() {
     if gtk::init().is_err() {
         println!("Failed to initialize GTK.");
         return;
     }
+    println!("Using GTK {}.{}", gtk::get_major_version(), gtk::get_minor_version());
 
     let window = Window::new(WindowType::Toplevel);
-    window.set_title("First GTK+ Program");
-    window.set_default_size(350, 70);
-
+    window.set_title("Fan control");
+    window.set_default_size(350, 400);
 
     let main_box = Box::new(Orientation::Horizontal, 0);
     window.add(&main_box);
 
-    let fan_list = ListBox::new();
-    main_box.pack_start(&fan_list, false, true, 0);
+    let sensors_sidebar = StackSidebar::new();
+    main_box.pack_start(&sensors_sidebar, false, true, 0);
 
-    // for fan in &["Fan0", "Fan1", "Custom fan"] {
-    //     fan_list.insert(&Label::new(Some(fan)), -1);
-    // }
-
-
-    unsafe {
-        sensors_init(libc::fopen(CString::new("/etc/sensors3.conf")
-                                     .unwrap()
-                                     .into_raw(),
-                                 CString::new("r")
-                                     .unwrap()
-                                     .into_raw()) as *mut _IO_FILE);
-    }
-
-    let mut chip_ptr: *const sensors_chip_name;
-    let mut i: i32 = 0;
-
-    println!("Looking for chips...");
-    unsafe {
-        chip_ptr = sensors_get_detected_chips(ptr::null(), &mut i);
-
-        while chip_ptr != ptr::null() {
-            let chip = *chip_ptr;
-
-            let path = CString::from_raw((&chip).path).into_string().unwrap();
-            let prefix = CString::from_raw((&chip).prefix).into_string().unwrap();
-
-            println!("Chip found: path:{} prefix:{} -- {:?}", path, prefix, &chip);
+    let sensors_stack = Stack::new();
+    main_box.pack_end(&sensors_stack, true, true, 0);
 
 
-            let mut j = 0;
-            let mut feat_ptr = sensors_get_features(chip_ptr, &mut j);
-            while feat_ptr != ptr::null() {
+    let sensors = get_sensors("/etc/sensors3.conf");
+    println!("{} sensors", sensors.len());
 
-                println!("    feature: {:?} {:?}",
-                         CString::from_raw(sensors_get_label(chip_ptr, feat_ptr)),
-                         *feat_ptr);
+    for ref sensor in &sensors {
+        println!(">{} @{}", &sensor.prefix, &sensor.path);
 
-                let mut k = 0;
-                let mut subfeat_ptr = sensors_get_all_subfeatures(chip_ptr, feat_ptr, &mut k);
-                while subfeat_ptr != ptr::null() {
+        let scroll = ScrolledWindow::new(None, None);
+        sensors_stack.add_titled(&scroll,
+                                 &remove_nul(&(sensor.addr.to_string() + "-" + &sensor.prefix.to_string())),
+                                 &remove_nul(&sensor.prefix));
 
-                    println!("        subfeat: {:?}", *subfeat_ptr);
 
-                    subfeat_ptr = sensors_get_all_subfeatures(chip_ptr, feat_ptr, &mut k);
+        let sensor_page = Box::new(Orientation::Vertical, 0);
+        scroll.add(&sensor_page);
+
+        for ref feat in &sensor.features {
+            if feat.type_ == sensors_feature_type::SENSORS_FEATURE_FAN {
+
+                let fan_container = Box::new(Orientation::Vertical, 0);
+                sensor_page.add(&fan_container);
+
+                let fan_name = Label::new(None);
+                fan_name.set_markup(&("<big>- ".to_string() + &feat.name + &" -</big>".to_string()));
+                fan_container.add(&fan_name);
+
+                for ref subfeat in &feat.subfeatures {
+                    let lbl = Label::new(Some(&subfeat.name));
+                    fan_container.add(&lbl);
+
+                    let path = subfeat_path(&sensor, &feat, &subfeat);
                 }
 
-                feat_ptr = sensors_get_features(chip_ptr, &mut j);
+                sensor_page.add(&Separator::new(Orientation::Horizontal));
             }
 
-
-            fan_list.insert(&Label::new(Some(&path)), -1);
-
-            chip_ptr = sensors_get_detected_chips(ptr::null(), &mut i);
         }
+
     }
-    println!("done");
 
+    sensors_sidebar.set_stack(&sensors_stack);
 
-
-
-
+    println!("GTK Setup done");
 
     window.show_all();
+    window.connect_delete_event(|_, _| {
+        gtk::main_quit();
+        Inhibit(false)
+    });
     gtk::main();
+}
+
+
+use std::fs::File;
+use std::sync::Arc;
+use std::marker::Send;
+
+// #[derive(Send)]
+struct ValueViewer {
+
+    file: File,
+}
+unsafe impl std::marker::Send for ValueViewer {}
+impl ValueViewer {
+    fn new(name: &str, path: &str) -> Arc<ValueViewer> {
+        let mut ret = Arc::new(ValueViewer{
+            file: File::open(path).unwrap(),
+        });
+
+
+        {
+            let mut ret2 = ret.clone();
+            glib::timeout_add(500, move ||{
+                let mut s = String::new();
+
+                use std::io::Read;
+                ret2.file.read_to_string(&mut s);
+                
+                Continue(true)
+            });
+        }
+
+        ret
+    }
 }

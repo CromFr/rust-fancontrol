@@ -5,8 +5,11 @@ authors = ["Thibaut Charles <CromFr@gmail.com>"]
 
 [dependencies]
 libc = "0.2.0"
-#libsensors = "3.0.0"
+
 
 [dependencies.gtk]
-version = "0.1.1"
+version = "^0"
 features = ["v3_16"]
+
+[dependencies.glib]
+version = "^0"
